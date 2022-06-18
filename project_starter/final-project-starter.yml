@@ -144,6 +144,20 @@ Resources:
         - Key: Name
           Value: !Sub ${EnvironmentName}-Private-Sub2
 
+  UdagramIGAccess:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-IG
+
+  IGAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref UdagramIGAccess
+      VpcId: !Ref myVPC
+
+
 Outputs:
   # This is also optional.
   # Bonus points for useful outputs!
