@@ -19,6 +19,10 @@ Parameters:
   AMItoUse:
     Description: AMI to use for our base image
     Type: String
+  InstanceType:
+    Description: WebServer Instance Type
+    Type: String
+    Default: t2.medium
 
 Resources:
   # instace profile contains the IAM Role name(s) that we want to associate to our auto scaling EC2 Servers
@@ -54,13 +58,24 @@ Resources:
                 Resource: '*'
       Tags:
         - Key: Name
-          Value: iRef EnvironmentName
+          Value: !Ref EnvironmentName
 
   ProfileWithRolesForOurApp:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
         - !Ref UdacityS3ReadOnlyEC2
+
+  OurLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref AMItoUse
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref ProfileWithRolesForOurApp
+      BlockDeviceMappings:
+        - DeviceName: /dev/sdh
+          Ebs:
+            VolumeSize: 10
 
 Outputs:
   # This is also optional.
