@@ -89,7 +89,8 @@ Resources:
     Properties:
         GroupDescription: Allow http port 80 communication to and from our load balancer
         GroupName: SGLBGroup
-        VpcId: !Ref myVPC
+        VpcId:
+          Fn::ImportValue: !Sub "${EnvironmentName}-VPC"
         SecurityGroupIngress:
           - IpProtocol: tcp
             FromPort: 80
@@ -107,7 +108,8 @@ Resources:
     Properties:
         GroupDescription: Allow http port 80 into our test host and unrestricted access out
         GroupName: SGResourceGroup
-        VpcId: !Ref myVPC
+        VpcId:
+          Fn::ImportValue: !Sub "${EnvironmentName}-VPC"
         SecurityGroupIngress:
           - IpProtocol: tcp
             FromPort: 80
@@ -208,12 +210,12 @@ Resources:
       RouteTableId: !Ref RouteTable
       SubnetId: !Ref PublicSubnet2
 
-    NatGateway1EIP:
+  NatGateway1EIP:
     Type: AWS::EC2::EIP
-    DependsOn: InternetGatewayAttachment
+    DependsOn: IGAttachment
     Properties:
-        Domain: vpc
-    
+      Domain: vpc
+
   EIP1:
     Type: AWS::EC2::EIP
     DependsOn: IGAttachment
@@ -238,7 +240,7 @@ Resources:
       Tags:
        - Key: Name
          Value: !Sub ${EnvironmentName}-Nat1
-      
+
   NatGateway2: 
     Type: AWS::EC2::NatGateway
     Properties:
@@ -256,7 +258,7 @@ Resources:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref myVPC
-  
+
   PrivSubRT2:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -268,7 +270,7 @@ Resources:
       RouteTableId: !Ref PrivSubRT1
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NatGateway1
-  
+
   PrivateRoute2:
     Type: AWS::EC2::Route
     Properties:
@@ -281,7 +283,7 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivSubRT1
       SubnetId: !Ref PrivateSubnet1
-  
+
   PrivSubRTAssociation2:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -292,12 +294,10 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       SecurityGroups: 
-      - Ref: LBAccessSG
+        - Ref: LBAccessSG
       Subnets:
-      - Fn::ImportValue:
-          !Sub "${EnvironmentName}-Public-Sub1"
-      - Fn::ImportValue:
-          !Sub "${EnvironmentName}-Public-Sub2"
+        - Fn::ImportValue: !Sub "${EnvironmentName}-Public-Sub1"
+        - Fn::ImportValue: !Sub "${EnvironmentName}-Public-Sub2"
 
   ServerAutoScalingGroup: 
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -307,12 +307,12 @@ Resources:
       MaxSize: '4'
       MinSize: '2'
       VPCZoneIdentifier:
-      - Fn::ImportValue:
-          !Sub "${EnvironmentName}-Private-Sub1"
-      - Fn::ImportValue:
-          !Sub "${EnvironmentName}-Private-Sub2"
+        - Fn::ImportValue:
+            !Sub "${EnvironmentName}-Private-Sub1"
+        - Fn::ImportValue:
+            !Sub "${EnvironmentName}-Private-Sub2"
       TargetGroupARNs:
-      - Ref: TargetGroup
+        - Ref: TargetGroup
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
