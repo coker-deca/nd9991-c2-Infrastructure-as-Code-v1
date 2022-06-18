@@ -75,7 +75,32 @@ Resources:
             VolumeSize: 10
       SecurityGroups: 
         - !Ref ServerAccessSG
+      UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            sudo apt-get update -y
+            sudo apt-get install apache2 -y
+            sudo systemctl start apache2.service
+            cd /var/www/html
+            echo "Udacity Demo Web Server Up and Running!" > index.html
 
+  LBAccessSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+        GroupDescription: Allow http port 80 communication to and from our load balancer
+        GroupName: SGLBGroup
+        VpcId: !Ref myVPC
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+        SecurityGroupEgress:
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            DestinationSecurityGroupId:
+              !Ref ServerAccessSG
 
   ServerAccessSG:
     Type: AWS::EC2::SecurityGroup
@@ -87,7 +112,8 @@ Resources:
           - IpProtocol: tcp
             FromPort: 80
             ToPort: 80
-            CidrIp: 0.0.0.0/0
+            SourceSecurityGroupId:
+              !Ref LBAccessSG
 
   myVPC:
     Type: AWS::EC2::VPC
@@ -122,7 +148,7 @@ Resources:
         - Key: Name
           Value: !Sub ${EnvironmentName}-Public-Sub2
 
-  PrivSub1:
+  PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId:
@@ -133,7 +159,7 @@ Resources:
         - Key: Name
           Value: !Sub ${EnvironmentName}-Private-Sub1
 
-  PrivSub2:
+  PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId:
@@ -157,8 +183,205 @@ Resources:
       InternetGatewayId: !Ref UdagramIGAccess
       VpcId: !Ref myVPC
 
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref myVPC
 
+  InternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: IGAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref UdagramIGAccess
+      RouteTableId: !Ref RouteTable
+
+  PubSubRTAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PubSubRTAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnet2
+
+    NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+        Domain: vpc
+    
+  EIP1:
+    Type: AWS::EC2::EIP
+    DependsOn: IGAttachment
+    Properties:
+        Domain: vpc
+
+  EIP2:
+    Type: AWS::EC2::EIP
+    DependsOn: IGAttachment
+    Properties:
+        Domain: vpc
+
+  NatGateway1: 
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId:
+        !Ref PublicSubnet1
+      AllocationId:
+        Fn::GetAtt:
+          - EIP1
+          - AllocationId
+      Tags:
+       - Key: Name
+         Value: !Sub ${EnvironmentName}-Nat1
+      
+  NatGateway2: 
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId:
+        !Ref PublicSubnet2
+      AllocationId:
+        Fn::GetAtt:
+          - EIP2
+          - AllocationId
+      Tags:
+       - Key: Name
+         Value: !Sub ${EnvironmentName}-Nat2
+
+  PrivSubRT1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref myVPC
+  
+  PrivSubRT2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref myVPC
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivSubRT1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+  
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivSubRT2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivSubRTAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivSubRT1
+      SubnetId: !Ref PrivateSubnet1
+  
+  PrivSubRTAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivSubRT2
+      SubnetId: !Ref PrivateSubnet2
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      SecurityGroups: 
+      - Ref: LBAccessSG
+      Subnets:
+      - Fn::ImportValue:
+          !Sub "${EnvironmentName}-Public-Sub1"
+      - Fn::ImportValue:
+          !Sub "${EnvironmentName}-Public-Sub2"
+
+  ServerAutoScalingGroup: 
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: '2'
+      LaunchConfigurationName: !Ref OurLaunchConfig
+      MaxSize: '4'
+      MinSize: '2'
+      VPCZoneIdentifier:
+      - Fn::ImportValue:
+          !Sub "${EnvironmentName}-Private-Sub1"
+      - Fn::ImportValue:
+          !Sub "${EnvironmentName}-Private-Sub2"
+      TargetGroupARNs:
+      - Ref: TargetGroup
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 20
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 8
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: 
+        Fn::ImportValue:
+          Fn::Sub: "${EnvironmentName}-myVPC"
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: TargetGroup
+      LoadBalancerArn:
+        Ref: LoadBalancer
+      Port: '80'
+      Protocol: HTTP
+  
+  LBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions: 
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroup
+      Conditions:
+      - Field: path-pattern
+        Values: [/]
+      ListenerArn: !Ref Listener
+      Priority: 1
+  
 Outputs:
+  IamProfile:
+    Description: Instance profile for accessing S3
+    Value: !Ref ProfileWithRolesForOurApp
+  VPC: 
+    Description: VPC for Udagram
+    Value: !Ref myVPC
+  PublicSubnetAZ1:
+    Description: Public Subnet in first AZ
+    Value: !Ref PublicSubnet1
+  PublicSubnetAZ2:
+    Description: Public Subnet in Second AZ
+    Value: !Ref PublicSubnet2
+  PrivateSubnetAZ1:
+    Description: Private Subnet in first AZ
+    Value: !Ref PrivateSubnet1
+  PrivateSubnetAZ2:
+    Description: Private Subnet in Second AZ
+    Value: !Ref PrivateSubnet2
+  ServerAccessSG:
+    Description: Security Group for WebServers connected to Load Balancers
+    Value: !Ref ServerAccessSG
+  LoadBalancerSG:
+    Description: LoadBalancer Security Group
+    Value: !Ref LBAccessSG
+  LoadBalancerDns:
+    Description: DNS name for the loadbalancer
+    Value: !GetAtt LoadBalancer.DNSName
+
   # This is also optional.
   # Bonus points for useful outputs!
   # for example, if you create a Load Balancer
