@@ -10,18 +10,15 @@ Parameters:
   EnvironmentName:
     Description: Environment name
     Type: String
-  myVPC:
-    Description: VPC used to deploy our resources below
-    Type: AWS::EC2::VPC::Id
-  PublicSubnet:
-    Description: Subnet to be used for our Web Server
-    Type: AWS::EC2::Subnet::Id
   AMItoUse:
     Description: AMI to use for our base image
     Type: String
   InstanceType:
     Description: WebServer Instance Type
     Type: String
+    AllowedValues:
+      - t3.medium
+      - t2.medium
     Default: t2.medium
 
 Resources:
@@ -76,6 +73,76 @@ Resources:
         - DeviceName: /dev/sdh
           Ebs:
             VolumeSize: 10
+      SecurityGroups: 
+        - !Ref ServerAccessSG
+
+
+  ServerAccessSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+        GroupDescription: Allow http port 80 into our test host and unrestricted access out
+        GroupName: SGResourceGroup
+        VpcId: !Ref myVPC
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-VPC
+
+  PublicSubnet1: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        !Ref myVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Public-Sub1
+
+  PublicSubnet2: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        !Ref myVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Public-Sub2
+
+  PrivSub1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        !Ref myVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Private-Sub1
+
+  PrivSub2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        !Ref myVPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Private-Sub2
 
 Outputs:
   # This is also optional.
